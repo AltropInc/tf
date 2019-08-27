@@ -147,8 +147,7 @@ int64_t StrScan::toInteger ()
 	char const *p = str_ + pos_;
 	if (*p=='-')
     {
-		++p;
-        ++pos;
+        ++pos_;
 		return -int64_t(toUnsigned());
     }
 	return int64_t(toUnsigned());
