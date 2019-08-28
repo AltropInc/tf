@@ -32,6 +32,15 @@ class StrBuf
     }
 
     void clear() { tail_ = 0; }
+	
+    void resize(size_t sz, char fill=0)
+    {
+        if (tail_ >= sz) tail_ = sz;
+        else if (sz < capacity_)
+        {
+            while (tail_ < sz) buffer_[tail_++] = fill;
+        }
+    }
 
     void push_back (char val) { if (tail_ < capacity_) buffer_[tail_++] = val; }
     void pop_back () { if (tail_>0) --tail_; }
