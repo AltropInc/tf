@@ -26,7 +26,9 @@ public:
     StrScan(const char* begin, const char* end) : str_(begin), length_(size_t(end-begin)) {}
     explicit StrScan(const std::string& str) : str_(str.c_str()), length_(str.length()) {}
     explicit StrScan(const char* str) : str_(str), length_(strlen(str)) {}
-
+    StrScan(StrScan&& oth) = default;
+    StrScan(const StrScan& oth) = default;
+	
     const char* c_str() const { return str_; }
     size_t length() const { return length_; }
     bool empty() const { return str_==nullptr; }
@@ -60,21 +62,21 @@ public:
     StrScan& operator >> (uint16_t& n) { n=toInteger<uint16_t>(); return *this; };
     StrScan& operator >> (uint32_t& n) { n=toInteger<uint32_t>(); return *this; };
     StrScan& operator >> (uint64_t& n) { n=toInteger<uint64_t>(); return *this; };
-    StrParser& operator >> (double& n) { n=toDouble(); skipSeparator(); return *this; };
-    StrParser& operator >> (bool& n) { n=toBool(); skipSeparator(); return *this; };
-    StrParser& operator >> (std::string& n) { n=toString(); skipSeparator(); return *this; };
-    StrParser& operator >> (StrRef& n) { n=toStrRef(); skipSeparator(); return *this; };
-    StrParser& operator >> (StrRefInLength& n) { n=toStrRefInLength(); skipSeparator(); return *this; };
-    StrParser& operator >> (std::vector<std::string>& strings)
+    StrScan& operator >> (double& n) { n=toDouble(); skipSeparator(); return *this; };
+    StrScan& operator >> (bool& n) { n=toBool(); skipSeparator(); return *this; };
+    StrScan& operator >> (std::string& n) { n=toString(); skipSeparator(); return *this; };
+    StrScan& operator >> (StrRef& n) { n=toStrRef(); skipSeparator(); return *this; };
+    StrScan& operator >> (StrRefInLength& n) { n=toStrRefInLength(); skipSeparator(); return *this; };
+    StrScan& operator >> (std::vector<std::string>& strings)
     {  split(strings); skipSeparator(); return *this;  }
 
     // For any type that has static method fromStr
     template <typename T>
-    StrParser& operator >> (T& value)
+    StrScan& operator >> (T& value)
     {   value=T::fromStr(toString().c_str()); skipSeparator(); return *this;  }
     // For EnumSet using refective Enum type only. Not work for standard c++ enum
     template <typename T>
-    StrParser& operator >> (EnumSet<T>& value)
+    StrScan& operator >> (EnumSet<T>& value)
     {
         while (!atValueEnd())
         {
@@ -90,8 +92,8 @@ public:
     }
 
     // Create and release a block parser for a block using different format
-    StrParser newBlockParser(char blockStart=0, char newSeparator=0);
-    void releaseBlockParser(StrParser& blockParser);
+    StrScan newBlockParser(char blockStart=0, char newSeparator=0);
+    void releaseBlockParser(StrScan& blockParser);
 
     void setTerminator(char ch) { terminator_ = ch; }
     char getTerminator() const { return terminator_; }
@@ -459,12 +461,25 @@ void StrParser::skipSplitSeparator()
     }
 }
 
+
+void StrParser::skipSplitSeparator()
+{
+    if (pos_<length_ && curChar()==splitSeparator_)
+    {
+        if (clearSeparator_)
+        {
+            *(const_cast<char*>(str_ + pos_)) = '\0';
+        }
+        ++pos_;
+    }
+}
+
 inline void StrParser::skipWhiteSpace()
 {
     char ch = curChar();
     while (ch && isspace(ch))
     {
-        ch = nextChar();
+        ch = done() ? '\0' : *(str_ + ++pos_);
     }
 }
 
@@ -509,7 +524,7 @@ void StrParser::getIdentifier(std::string& strOut)
           )
     {
         tv_.string_.push_back(ch);
-        ch = nextChar();
+        ch = done() ? '\0' : *(str_ + ++pos_);
     }
     tv_.token_ = Token::Identifier;
 }
@@ -534,6 +549,7 @@ void StrParser::getNumber()
             tv_.integer_ = -tv_.integer_;
         }
         integerGot = true;
+        ch = curChar();
     }
     else if (ch!='.')
     {
@@ -558,10 +574,10 @@ void StrParser::getNumber()
         {
             size_t old_pos = pos_;
             double decimal = toUnsignedFromDec();
-            
+            tv_.double_ = double(tv_.integer_);          
             if (pos_-old_pos<=18)
             {
-                tv_.double_ +=  decimal/s_exp10[pos_-old_pos+1];
+                tv_.double_ +=  decimal/s_exp10[pos_-old_pos];
             }
             tv_.token_ = Token::Double;
         }
@@ -569,7 +585,10 @@ void StrParser::getNumber()
         {
             tv_.token_ = Token::Double;
         }
-        tv_.token_ = Token::DotSign;
+        else
+        {
+            tv_.token_ = Token::DotSign;
+        }
     }
     else
     {
@@ -613,6 +632,7 @@ void StrParser::getNumber()
 
 const StrParser::TokenValue* StrParser::getToken()
 {
+    skipWhiteSpace();
     if (done())
     {
         tv_.token_ = Token::Done;
@@ -641,6 +661,11 @@ const StrParser::TokenValue* StrParser::getToken()
     if (ch>='A' && ch<='Z' || ch>='a' && ch<='z' || ch=='_')
     {
         getIdentifier(tv_.string_);
+        if (tv_.string_=="Infinity" || tv_.string_=="NaN")
+        {
+            tv_.integer_ = std::numeric_limits<int64_t>::max();
+            tv_.token_ = Token::Integer;
+        }
         return &tv_;
     }
 
