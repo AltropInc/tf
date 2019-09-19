@@ -67,6 +67,57 @@ class NAME: public EnumType<NAME> \
 	static void init() { if (!_names[0]) EnumBase::setEnumNames(_names_buf, _names, _enum_number); } \
 }
 
+	// Helper to convert startdard enum or non-startdard enum value to size_t
+struct EnumToSizeT
+{
+    template <class ET>
+    typename std::enable_if<std::is_enum<ET>::value,size_t>::type
+    static get(ET e)
+    {
+        return static_cast<typename std::underlying_type<ET>::type>(e);
+    }
+
+    template <class ET>
+    typename std::enable_if<!std::is_enum<ET>::value,size_t>::type
+    static get(ET e)
+    { 
+        return ET::toUnderlying(e);
+    }
+};
+
+// A simple replacement of std::bitset. Number of bits limitation is 64.
+// And this limitation fits our current usage.
+struct BitSet
+{
+    uint64_t     value_ { 0UL} ;
+    BitSet() = default;
+    BitSet(const BitSet& oth): value_(oth.value_) {}
+    BitSet(uint64_t val): value_(val) {}
+    BitSet& set (size_t v) { value_ |= (1UL << v); return *this; }
+    BitSet& set () { value_ = ~(0UL); return *this; }
+    BitSet& reset (size_t v) { value_ &= ~(1UL << v); return *this; }
+    BitSet& reset () { value_ = 0UL;  return *this; }
+    bool test (size_t v) const { return (value_ | (1UL << v))!=0; }
+    BitSet& flip (size_t v) { value_ ^ (1UL << v); return *this; }
+    BitSet& flip () { value_ = ~value_; return *this; }
+    bool empty() const { return value_==0; }
+    bool any() const { return value_!=0; }
+    size_t count() const { return __builtin_popcountl(value_); }
+    size_t size() const { return __builtin_popcountl(value_); }
+    BitSet& operator |= (BitSet oth) { value_|= oth.value_; *this; }
+    BitSet& operator &= (BitSet oth) { value_&= oth.value_; *this; }
+    uint64_t to_ullong() const { return value_; }
+    std::string to_string () const
+    {
+        std::string output;
+        for (uint64_t e = 0; e < 64; ++e)
+        {
+            output.push_back(((1UL << e) & value_) ? '1' : '0');
+        }
+        return output;
+    }
+};
+
 /**
  * \class EnumSet
  * \brief implements a bitset of enum
