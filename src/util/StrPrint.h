@@ -1,77 +1,12 @@
 #pragma once
-#include "types.h"
+
+#include "StrBuffer.h"
+
 #include <stddef.h>
 #include <string>
 #include <tuple>
 
 namespace tf {
-
-class StrBuf
-{
-  public:
-    StrBuf (char* buffer, size_t sz, size_t filled=0)
-      : buffer_(buffer)
-	  , capacity_(sz)
-	  , tail_(filled)
-	{}
-
-    StrBuf (std::string & buffer, size_t filled=0)
-      : buffer_(&buffer[0])
-	  , capacity_(buffer.length())
-	  , tail_(filled)
-	{}
-
-    size_t length() const { return tail_; }
-    bool empty() const { return tail_==0; }
-    bool overflowed() const { return tail_==capacity_; }
-
-    const char* c_str() const
-    {  
-       if (tail_ < capacity_) *const_cast<char*>(buffer_+tail_) ='\0';
-       return buffer_;
-    }
-
-    void clear() { tail_ = 0; }
-	
-    void resize(size_t sz, char fill=0)
-    {
-        if (tail_ >= sz) tail_ = sz;
-        else if (sz < capacity_)
-        {
-            while (tail_ < sz) buffer_[tail_++] = fill;
-        }
-    }
-
-    void push_back (char val) { if (tail_ < capacity_) buffer_[tail_++] = val; }
-    void pop_back () { if (tail_>0) --tail_; }
-    const char& back () const { return tail_>0 ? buffer_[tail_-1] : buffer_[0]; }
-    char& back () { return tail_>0 ? buffer_[tail_-1] : buffer_[0]; }
-
-    void append (const char* val)
-    { while (tail_ < capacity_ && *val) buffer_[tail_++] = *val++; }
-
-    void append (const char* val, size_t n)
-    { while (tail_ < capacity_ &&  *val && n--) buffer_[tail_++] = *val++; }
-
-    void append (const std::string val)
-    { append(val.c_str(), val.length()); }
-
-    void append (size_t repeat, char val)
-    { while (tail_ < capacity_ && repeat--) buffer_[tail_++] = val; }
-
-    void appendUntil (const char* val, char terminator)
-    { while (tail_ < capacity_ && *val!=terminator) buffer_[tail_++] = *val++; }
-
-    void appendWithPadding (const char* val, size_t n, char padding)
-    {
-       while (tail_ < capacity_ &&  *val && n--) buffer_[tail_++] = *val++;
-       while (tail_ < capacity_ && n--) buffer_[tail_++] = padding;
-    }
-  private:
-    char*  buffer_;
-    size_t capacity_;
-    size_t tail_;
-};
 
 template <typename BufferT>
 class StrPrint
@@ -115,12 +50,6 @@ class StrPrint
     BufferT&    buffer_;
 };
 
-namespace ConstDef
-{
-	extern const char s_double_digits[];
-	extern const uint64_t s_exp10[];
-};
-
 template<typename BufferT>
 TF_INLINE StrPrint<BufferT>& StrPrint<BufferT>::operator << (uint32_t val)
 {
@@ -130,7 +59,7 @@ TF_INLINE StrPrint<BufferT>& StrPrint<BufferT>::operator << (uint32_t val)
     }
     else if (val < 100)
     {
-        buffer_.append(ConstDef::s_double_digits + val*2, 2);
+        buffer_.append(s_double_digits + val*2, 2);
     }
     else if (val < 10000)
     {
@@ -213,7 +142,7 @@ TF_INLINE StrPrint<BufferT>& StrPrint<BufferT>::operator << (std::tuple<double, 
         buffer_.push_back('-');
         dval = -dval;
     }
-    uint64_t exp = ConstDef::s_exp10[precision];
+    uint64_t exp = s_exp10[precision];
     int64_t lval = int64_t(dval * exp + 0.5);
     *this << int64_t(lval / exp) << '.';
     int64_t fval = lval % exp;

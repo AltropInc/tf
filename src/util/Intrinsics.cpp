@@ -13,24 +13,47 @@
 namespace tf
 {
 #if not defined (__GNUC__)
-int ffs (int x)
+int ffs (uint32_t x)
 {
     // De Bruijn Multiply table
-    static const int DeBruijnTable[32] = 
+    static const int DeBruijnTable32[32] = 
     {
        1, 2, 29, 3, 30, 15, 25, 4, 31, 23, 21, 16, 26, 18, 5, 9, 
        32, 28, 14, 24, 22, 20, 17, 8, 27, 13, 19, 7, 12, 6, 11, 10
     };
-    return DeBruijnTable[((unsigned)((x & -x) * 0x077CB531U)) >> 27];
+    return DeBruijnTable32[((unsigned)((x & -x) * 0x077CB531U)) >> 27];
 }
 
-int clz (int x)
+int ffs (uint64_t x)
+{
+    static const int DeBruijnTable64[64] = 
+    {
+        0, 47, 1, 56, 48, 27, 2, 60, 57, 49, 41, 37, 28, 16, 3, 61,
+        54, 58, 35, 52, 50, 42, 21, 44, 38, 32, 29, 23, 17, 11, 4, 62,
+        46, 55, 26, 59, 40, 36, 15, 53, 34, 51, 20, 43, 31, 22, 10, 45,
+        25, 39, 14, 33, 19, 30, 9, 24, 13, 18, 8, 12, 7, 6, 5, 63
+    };
+    return DeBruijnTable64[((uint32_t)((v ^ (v-1)) * 0x03F79D71B4CB0A89U)) >> 58];
+}
+template <typename T> int clz_T (T x)
 {
     int n = 0;
     if (x == 0) return sizeof(x) * 8;
     for (; x>0; ++n, x<<1);
     return n;
 }
+int clz_T(uint32_t n) { return clz_T(n); }
+int clz_T(uint64_t n) { return clz_T(n); }
+
+template <typename T> int bitsCount_T(T n) 
+{ 
+    int count = 0; 
+    while (n) { count += n & 1; n >>= 1; } 
+    return count; 
+}
+
+int bitsCount(uint32_t n) { return bitsCount_T(n); }
+int bitsCount(uint64_t n) { return bitsCount_T(n); }
 #endif
 
 const char* fastStrChrAligned(const char* s, char ch)
@@ -47,7 +70,7 @@ const char* fastStrChrAligned(const char* s, char ch)
         int m0 = _mm_movemask_epi8(v);
         if (m1 && (m1 < m0 || m0==0))
         {
-            return s + ctz(m1);
+            return s + ctz(uint32_t(m1));
             break;
         }
         if (m0)
@@ -64,7 +87,7 @@ const char* fastStrChrAligned(const char* s, char ch)
 const char* fastStrChr(const char* s, char ch)
 {
 #if defined (__SSE2__)
-    const char* aligned_addr = ConstAlign(s, 16);
+    const char* aligned_addr = constAlign(s, 16);
     while (s < aligned_addr)
     {
         if (*s==0)
@@ -96,7 +119,7 @@ size_t fastStrLenAligned(const char* s)
         int m = _mm_movemask_epi8(x);
         if (m)
         {
-            len += ctz(m);
+            len += ctz(uint32_t(m));
             break;
         }
         s += 16;
@@ -112,7 +135,7 @@ size_t fastStrLen(const char* s)
 {
 #if defined (__SSE2__)
     size_t len(0);
-    const char* aligned_addr = ConstAlign(s, 16);
+    const char* aligned_addr = constAlign(s, 16);
     while (s < aligned_addr)
     {
         if (*s++==0)
@@ -199,7 +222,7 @@ uint64_t fastSum(const uint8_t* bytes, int sz)
 #if defined (__SSE2__)
     uint64_t sum {0};
     // check alignment of bytes
-    const uint8_t* aligned_addr = ConstAlign(bytes, 16);
+    const uint8_t* aligned_addr = constAlign(bytes, 16);
     while (bytes < aligned_addr)
     {
         sum += *bytes++;
@@ -219,12 +242,12 @@ uint64_t fastSum(const uint8_t* bytes, int sz)
 void fastMemcpyAligned(void *dest, void *src, size_t sz)
 {
 #if defined (__AVX2__)
-// requies -mavx2
+    // requies -mavx2
     // assert alighments
     assert(sz % sizeof(__m256i) == 0);
     assert((intptr_t(dest) & (sizeof(__m256i)-1)) == 0);
     assert((intptr_t(src) & (sizeof(__m256i)-1)) == 0);
-    const __m256i *s = (const __m256i*)src;
+    __m256i *s = (__m256i*)src;
     __m256i *d = (__m256i*)dest;
     for (size_t n = sz >> 5; n > 0; n--, s++, d++)
         _mm256_stream_si256(d, _mm256_stream_load_si256(s));
@@ -233,7 +256,7 @@ void fastMemcpyAligned(void *dest, void *src, size_t sz)
     assert(sz % sizeof(__m128i) == 0);
     assert((intptr_t(dest) & (sizeof(__m128i)-1)) == 0);
     assert((intptr_t(src) & (sizeof(__m128i)-1)) == 0);
-    const __m128i *s = (const __m128i*)src;
+    __m128i *s = ( __m128i*)src;
     __m128i *d = (__m128i*)dest;
     for (size_t n = sz >> 4; n > 0; n--, s++, d++)
         _mm_stream_si128(d, _mm_stream_load_si128(s));
@@ -255,7 +278,7 @@ void fastMemcpyAlignedBackword(void *dest, void *src, size_t sz)
     assert((intptr_t(dest) & (sizeof(__m256i)-1)) == 0);
     assert((intptr_t(src) & (sizeof(__m256i)-1)) == 0);
     size_t n_sz = sz >> 5;
-    const __m256i *s = (const __m256i*)src + n_sz;
+    __m256i *s = (__m256i*)src + n_sz;
     __m256i *d = (__m256i*)dest + n_sz;
     for (; n_sz > 0; n_sz--, --s, --d)
         _mm256_stream_si256(d, _mm256_stream_load_si256(s));
@@ -265,7 +288,7 @@ void fastMemcpyAlignedBackword(void *dest, void *src, size_t sz)
     assert((intptr_t(dest) & (sizeof(__m128i)-1)) == 0);
     assert((intptr_t(src) & (sizeof(__m128i)-1)) == 0);
     size_t n_sz = sz >> 4;
-     const __m128i *s = (const __m128i*)src + n_sz;
+    __m128i *s = (__m128i*)src + n_sz;
     __m128i *d = (__m128i*)dest + n_sz;
     for (; n_sz > 0; n_sz--, s++, d++)
         _mm_stream_si128(d, _mm_stream_load_si128(s));
@@ -282,8 +305,33 @@ void fastMemcpyAlignedBackword(void *dest, void *src, size_t sz)
 #endif
 }
 
+size_t strHash(const char * str)
+{
+    size_t result = 0;
+    if (TF_LIKELY(str))
+    {
+        for (const char*cp =str; *cp; ++cp)
+        {
+            result = (result << 5) - result + *cp;
+        }
+    }
+    return result;
+}
+
+size_t strHash(const char * str, size_t length)
+{
+    size_t result = 0;
+    const char* cp = str;
+    while (length-- > 0)
+    {
+        result = (result << 5) - result + *(cp++);
+    }
+    return result;
+}
+
 } // namespace tf
 
+#if 0
 int main ()
 {
     uint8_t ints[777];
@@ -307,3 +355,4 @@ int main ()
     
     return 0;
 }
+#endif

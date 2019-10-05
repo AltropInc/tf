@@ -143,47 +143,6 @@ using StrPool = StrPool_T<MutexNone>;
 using StrPoolMutexLocked = StrPool_T<std::mutex>;
 using StrPoolSpinLocked = StrPool_T<SpinMutex>;
 
-/**
- * \class PooledStrKey
- * \ingroup StringUtils
- * \brief A hash key using pooled string.
- */
-struct PooledStrKey
-{
-    const char * str_;
-    PooledStrKey(const char* str): str_ (str) {}
-    PooledStrKey(const std::string & str): str_ (str.c_str()) {}
-
-    bool operator==(const PooledStrKey &other) const
-    { return std::strcmp(str_, other.str_)==0; }
-
-    size_t hash() const;
-};
-
-TF_INLINE size_t PooledStrKey::hash() const
-{
-    size_t result = 0;
-    if (TF_LIKELY(str_))
-    {
-        for (const char*cp =str_; *cp; ++cp)
-        {
-            result = (result << 5) - result + *cp;
-        }
-    }
-    return result;
 }
 
-}
-
-namespace std {
-template <>
-struct hash<tf::PooledStrKey>
-{
-    size_t operator()(const tf::PooledStrKey& key) const noexcept
-    {
-        return key.hash();
-    }
-};
-
-}
 

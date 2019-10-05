@@ -1,5 +1,7 @@
 #include "Enum.h"
 #include <iostream>
+#include <assert.h>
+#include <cstring>
 
 namespace tf {
 
@@ -62,7 +64,7 @@ int EnumBase::fromString(const char** name_list, const int* name_indice, const c
 		{
 			*(indice+i) = i;
 			if (res<0 && name_list[*(indice+i)] &&
-			    strcmp(name_list[*(indice+i)], enum_name) == 0)
+			    std::strcmp(name_list[*(indice+i)], enum_name) == 0)
 			{
 				res = i;
 			}
@@ -75,7 +77,7 @@ int EnumBase::fromString(const char** name_list, const int* name_indice, const c
 				if (name_list[*(indice+n)])
 				{
 					if (!name_list[*(indice+m)] ||
-					    strcmp(name_list[*(indice+m)], name_list[*(indice+n)])<0 )
+					    std::strcmp(name_list[*(indice+m)], name_list[*(indice+n)])<0 )
 					{
 						std::swap(*(indice+n), *(indice+m));
 					}
@@ -94,7 +96,7 @@ int EnumBase::fromString(const char** name_list, const int* name_indice, const c
 	while (start < end)
 	{
 		const int * mid = start + (end-start)/2;
-		int res = name_list[*mid] ? strcmp(enum_name, name_list[*mid]) : 1;
+		int res = name_list[*mid] ? std:: strcmp(enum_name, name_list[*mid]) : 1;
 		if (res==0)
 		{
 			return *mid;
@@ -111,16 +113,16 @@ int EnumBase::fromString(const char** name_list, const int* name_indice, const c
 	return -1;
 }
 
-ENUM(Color, uint8_t, Red, Green, Blue);
-EnumSet<Color> colors(Color::Red, Color::Green);
+//ENUM(Color, uint8_t, Red, Green, Blue);
+//EnumSet<Color> colors(Color::Red, Color::Green);
 } // namespace tf
 
-using namespace tf;
+//using namespace tf;
 
-int main(void)
-{
-	Color c = Color::Red;
-	std::cout << c << std::endl;
-	std::cout << colors << std::endl;
-	return 0;
-}
+//int main(void)
+//{
+//	Color c = Color::Red;
+//	std::cout << c << std::endl;
+//	std::cout << colors << std::endl;
+//	return 0;
+//}

@@ -1,6 +1,7 @@
 #pragma once
 
-#include "platform.h"
+#include "Platform.h"
+#include <stddef.h>
 #include <stdint.h>
 #include <type_traits>
 //----------------------------------------------------------------------------
@@ -57,6 +58,49 @@ TF_INLINE int log2Ceil (T n)
 }
 
 //----------------------------------------------------------------------------
+// Expr table
+//----------------------------------------------------------------------------
+constexpr uint64_t s_exp10[] = {
+ 	1LL,
+  10LL,
+	100LL,
+	1000LL,
+	10000LL,
+	100000LL,
+	1000000LL,
+	1000000LL,
+	10000000LL,
+	100000000LL,
+	1000000000LL,
+	10000000000LL,
+	100000000000LL,
+	1000000000000LL,
+	10000000000000LL,
+	100000000000000LL,
+	1000000000000000LL,
+	10000000000000000LL,
+	100000000000000000LL,
+	1000000000000000000LL
+};
+constexpr size_t s_exp10_length = sizeof(s_exp10)/sizeof(uint64_t);
+
+//----------------------------------------------------------------------------
+// Double digits table for fast string to numeric conversion
+//----------------------------------------------------------------------------
+constexpr char s_double_digits[] = {
+	"00010203040506070809"
+	"10111213141516171819"
+	"20212223242526272829"
+	"30313233343536373839"
+	"40414243444546474849"
+	"50515253545556575859"
+	"60616263646566676869"
+	"70717273747576777879"
+	"80818283848586878889"
+	"90919293949596979899"
+};
+
+//----------------------------------------------------------------------------
 // constAlign align must be the value of 2, 4, 8, 16, 32, 64, ...
 //----------------------------------------------------------------------------
 template <typename T>
@@ -74,14 +118,44 @@ constexpr T* constAlign(T* p, size_t align)
 // Bitsets
 //----------------------------------------------------------------------------
 #if defined (__GNUC__)
-TF_INLINE int clz (unsigned int n) { return __builtin_clz(n); }
-TF_INLINE int ctz (unsigned int n) { return __builtin_ctz(n); }
-TF_INLINE int ffs (unsigned int n) { return __builtin_ffs(n); }
+///Returns the number of leading 0-bits in x, starting at the most significant
+///bit position. If x is 0, the result is undefined.
+TF_INLINE int clz (uint32_t n) { return __builtin_clz(n); }
+TF_INLINE int clz (uint64_t n) { return __builtin_clzl(n); }
+
+///Returns one plus the index of the least significant 1-bit of x,
+///or if x is zero, returns zero.
+TF_INLINE int ffs (uint32_t n) { return __builtin_ffs(n); }
+TF_INLINE int ffs (uint64_t n) { return __builtin_ffsl(n); }
+
+///Returns the number of trailing 0-bits in x, starting at the least significant
+///bit position. If x is 0, the result is undefined.
+TF_INLINE int ctz (uint32_t n) { return __builtin_ctz(n); }
+TF_INLINE int ctz (uint64_t n) { return __builtin_ctzl(n); }
+
+///Returns the number of 1-bits in x
+TF_INLINE int bitsCount (uint32_t x) { return __builtin_popcount(x); }
+TF_INLINE int bitsCount (uint64_t x) { return __builtin_popcountl(x); }
 #else
-int clz (unsigned int x);
-int ffs (unsigned int x);
-int ctz (unsigned int x) return ffs(x) -1; }
+int clz (uint32_t x);
+int ffs (uint32_t x);
+int ctz (uint32_t x) return ffs(x) -1; }
+TF_INLINE int bitsCount (int32_t x)
+TF_INLINE int bitsCount (int64_t x)
 #endif
+
+template <typename UIntT> constexpr int constCLZ (UIntT x)
+{
+    auto constCLZ_N0 = [&x] (UIntT x, int r) ->int {
+        return (x & (1 << (sizeof(UIntT)*8-1))) ? r : constCLZ(x << 1, r+1);
+    };
+    return x==0 ? sizeof(UIntT)*8 : constCLZ_N0(x, 0);
+}
+template <typename UIntT> constexpr int constFFS (UIntT x)
+{
+    return x==0 ? 0 : ((x & 1) ? 1 : constFFS(x >> 1) + 1);
+}
+template <typename UIntT> constexpr int constCTZ (UIntT x) { return constFFS(x)-1; }
 
 template<typename T>
 TF_INLINE constexpr T clearBits (T val, T upd_bits) { return val & ~upd_bits; }
@@ -223,5 +297,8 @@ uint64_t fastSumAligned(const uint8_t* bytes, int sz);
 const char* fastStrChr(const char* s, char ch);
 size_t fastStrLen(const char* s);
 uint64_t fastSum(const uint8_t* bytes, int sz);
+
+size_t strHash(const char * str);
+size_t strHash(const char * str, size_t length);
 
 } // namespace tf

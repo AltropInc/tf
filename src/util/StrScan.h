@@ -7,7 +7,10 @@
  */
 
 #pragma once
+
 #include "Platform.h"
+#include "StrBuffer.h"
+#include "EnumSet.h"
 #include <stddef.h>
 #include <cstring>
 #include <string>
@@ -32,8 +35,8 @@ public:
     const char* c_str() const { return str_; }
     size_t length() const { return length_; }
     bool empty() const { return str_==nullptr; }
-    bool done() const { return length_==pos_; }
-    char current () const { return *(str+pos_); }
+    bool done() const { return pos_>=length_; }
+    char current () const { return *(str_+pos_); }
     size_t pos () const { return pos_; }
 	
     uint64_t toUnsigned ();
@@ -54,14 +57,14 @@ public:
 
     size_t split(std::vector<std::string>& substrings);
 	
-    StrScan& operator >> (int8_t& n) { n=toInteger<int8_t>(); return *this; };
-    StrScan& operator >> (int16_t& n) { n=toInteger<int16_t>(); return *this; };
-    StrScan& operator >> (int32_t& n) { n=toInteger<int32_t>(); return *this; };
-    StrScan& operator >> (int64_t& n) { n=toInteger<int64_t>(); return *this; };
-    StrScan& operator >> (uint8_t& n) { n=toInteger<uint8_t>(); return *this; };
-    StrScan& operator >> (uint16_t& n) { n=toInteger<uint16_t>(); return *this; };
-    StrScan& operator >> (uint32_t& n) { n=toInteger<uint32_t>(); return *this; };
-    StrScan& operator >> (uint64_t& n) { n=toInteger<uint64_t>(); return *this; };
+    StrScan& operator >> (int8_t& n) { n=int8_t(toInteger()); skipSeparator(); return *this; };
+    StrScan& operator >> (int16_t& n) { n=int16_t(toInteger()); skipSeparator(); return *this; };
+    StrScan& operator >> (int32_t& n) { n=int32_t(toInteger()); skipSeparator(); return *this; };
+    StrScan& operator >> (int64_t& n) { n=int64_t(toInteger()); skipSeparator(); return *this; };
+    StrScan& operator >> (uint8_t& n) { n=uint8_t(toUnsigned()); skipSeparator(); return *this; };
+    StrScan& operator >> (uint16_t& n) { n=uint16_t(toUnsigned()); skipSeparator(); return *this; };
+    StrScan& operator >> (uint32_t& n) { n=uint32_t(toUnsigned()); skipSeparator(); return *this; };
+    StrScan& operator >> (uint64_t& n) { n=uint64_t(toUnsigned()); skipSeparator(); return *this; };
     StrScan& operator >> (double& n) { n=toDouble(); skipSeparator(); return *this; };
     StrScan& operator >> (bool& n) { n=toBool(); skipSeparator(); return *this; };
     StrScan& operator >> (std::string& n) { n=toString(); skipSeparator(); return *this; };
@@ -74,22 +77,10 @@ public:
     template <typename T>
     StrScan& operator >> (T& value)
     {   value=T::fromStr(toString().c_str()); skipSeparator(); return *this;  }
+
     // For EnumSet using refective Enum type only. Not work for standard c++ enum
     template <typename T>
-    StrScan& operator >> (EnumSet<T>& value)
-    {
-        while (!atValueEnd())
-        {
-            T ev = toType<T>();
-            if (ev!=T::INVALID)
-            {
-                value.set(ev);
-            }
-            skipSplitSeparator();
-        }
-        skipSeparator();
-        return *this;
-    }
+    StrScan& operator >> (EnumSet<T>& value);
 
     // Create and release a block parser for a block using different format
     StrScan newBlockParser(char blockStart=0, char newSeparator=0);
@@ -112,7 +103,7 @@ public:
 
     bool atValueEnd()
     {
-        char ch = curChar();
+        char ch = current();
         return pos_>=length_ || !ch || isSeparator_[uint8_t(ch)] ||
                ch==terminator_;
     }
@@ -167,7 +158,6 @@ public:
     const TokenValue* getToken();
 	
 private:
-    char curChar();
     char nextChar();
     void skipWhiteSpace();
     void getString(std::string& strOut);
@@ -175,6 +165,9 @@ private:
     void getNumber();
     void skipSeparator();
     void skipSplitSeparator();
+
+    static bool isBlockStartCh(char ch);
+    static char blockEndCh(char start_ch);
 
     const char* str_ { nullptr };
 	size_t length_ { 0 };
@@ -194,490 +187,33 @@ private:
     std::vector<bool> isSeparator_ { std::vector<bool>(256, false) };
     TokenValue  tv_;
 
-    char blockStart_ {'\0'};
+    char block_start_ {'\0'};
 };
 
-uint64_t StrScan::toUnsigned ()
+template <typename T>
+StrScan& StrScan::operator >> (EnumSet<T>& value)
 {
-    if (pos_ >= length_)
+    char start_ch = current();
+    char terminator = getTerminator();
+    if (isBlockStartCh(start_ch))
     {
-        return 0;
+        setTerminator(blockEndCh(start_ch));
+        nextChar(); // skip block start_ch
     }
-	char const *p = str_ + pos_;
-    if (*p=='0')
+    while (!atValueEnd())
     {
-        ++p;
-        ++pos_;
-        if (*p=='x' || *p=='X')
-        {
-            return toUnsignedFromHex();
-        }
-        else if (uint64_t(*p - '0') < 8)
-        {
-            return toUnsignedFromOct();
-        }  
+        T ev = toType<T>();
+        if (ev!=T::INVALID) value.set(ev);
+        skipSplitSeparator();
     }
-    return toUnsignedFromDec();
+    if (isBlockStartCh(start_ch))
+    {
+        setTerminator(terminator); 
+        nextChar(); // skip blockEndCh
+    }
+    skipSeparator();
+    return *this;
 }
 
-uint64_t StrScan::toUnsignedFromDec ()
-{
-    uint64_t val = 0;
-	uint64_t diff;
-    char const *p = str_ + pos_;
-    while (pos_< length_ && (diff = uint64_t(*p - '0')) < 10)
-    {
-      	val = val * 10 + diff;
-        ++p;
-	    ++pos_;
-    }
-    return val;
-}
-
-uint64_t StrScan::toUnsignedFromHex ()
-{
-    uint64_t val = 0;
-	char const *p = str_ + pos_;
-    uint64_t diff;
-    while (pos_< length_)
-    {
-        if ((diff = uint64_t(*p - '0')) < 10)
-        {
-            val = (val << 4) + diff;
-        }
-        else if ((diff = uint64_t(*p - 'A')) < 6)
-        {
-            val = (val << 4 ) + 10 + diff;
-        }
-        else if ((diff = uint64_t(*p - 'a')) < 6)
-        {
-            val = (val << 4 ) + 10 + diff;
-        }
-        else
-        {
-            break;
-        }
-        
-        ++p;
-	    ++pos_;
-    }
-    return val;
-}
-
-uint64_t StrScan::toUnsignedFromOct ()
-{
-    uint64_t val = 0;
-	char const *p = str_ + pos_;
-    uint64_t diff;
-    while (pos_< length_ && (diff = uint64_t(*p - '0')) < 8)
-    {
-        val = (val << 3) + diff;
-        ++p;
-	    ++pos_;
-    }
-    return val;
-}
-
-int64_t StrScan::toInteger ()
-{
-	char const *p = str_ + pos_;
-	if (*p=='-')
-    {
-        ++pos_;
-		return -int64_t(toUnsigned());
-    }
-	return int64_t(toUnsigned());
-}
-
-const std::string& StrParser::toString ()
-{
-	char const *p = str_ + pos_;
-	char const * startp = p;
-	while (*p && !isSeparator_[*p] && (!splitSeparator_ || *p!=splitSeparator_))
-    {
-        ++p;; ++pos_;
-    }
-	tv_.string_.assign(startp, size_t(p-startp));
-
-    return tv_.string_;
-}
-
-StrRef StrParser::toStrRef ()
-{
-    assert(clearSeparator_);
-	char const *p = str_ + pos_;
-    char const * startp = p;
-	while (*p && !isSeparator_[*p])
-    {
-        ++p; ++pos_;
-    }
-    return StrRef(startp);
-}
-
-StrRefInLength StrParser::toStrRefInLength ()
-{
-	char const *p = str_ + pos_;
-    char const * startp = p;
-	while (*p && !isSeparator_[*p])
-    {
-        ++p; ++pos_;
-    }
-    return StrRefInLength(startp, size_t(p-startp));
-}
-
-bool StrParser::toBool ()
-{
-	size_t startp = pos_;
-	char const *p = str_ + pos_;
-    char startCh = *p;
-	while (*p && !isSeparator_[*p])
-    {
-        ++pos_;
-        ++p;
-    }
-
-    return startCh=='t' || startCh=='T' || startCh=='1';
-}
-
-char StrParser::toChar ()
-{
-	const char ch = *(str_ + pos_);
-	if (ch && !isSeparator_[ch])
-    {
-        ++pos_;
-        return ch;
-    }
-    return '\0';
-}
-
-double StrParser::toDouble()
-{
-    getNumber();
-    return tv_.getDouble();
-}
-
-StrParser StrParser::newBlockParser(char blockStart, char newSeparator)
-{
-    if (blockStart)
-    {
-        // skip block start
-        ++pos_;
-     }
-    StrParser blockParser(str_+pos_, length_-pos_);
-    if (newSeparator)
-    {
-        blockParser.setSplitSeparator(newSeparator);
-    }
-    switch (blockStart)
-    {
-        case '[': blockParser.setTerminator(']'); break;
-        case '{': blockParser.setTerminator('}'); break;
-        case '(': blockParser.setTerminator(')'); break;
-        case '<': blockParser.setTerminator('>'); break;
-    }
-    blockParser.blockStart_ = blockStart;
-    return blockParser;
-}
-
-void StrParser::releaseBlockParser(StrParser& blockParser)
-{
-    pos_ += blockParser.pos_;
-    if (blockParser.blockStart_)
-    {
-        // skip block end
-        ++pos_;
-    }
-}
-
-size_t StrParser::split (std::vector<std::string>& substrings)
-{
-	size_t scanned(0);
-	size_t start_pos(pos_);
-	size_t end_pos(pos_);
-	bool string_started (false);
-	while (pos_ < length_ && str_[pos_]!=terminator_)
-	{
-	    if (str_[pos_]==splitSeparator_)
-		{
-			substrings.emplace_back(str_+start_pos, end_pos-start_pos);
-			string_started = false;
-			++scanned;
-			start_pos = pos_+1;
-			end_pos = start_pos;
-		}
-		else if (isspace(str_[pos_]))
-		{
-			if (skipLeadingSp_ && !string_started)
-			{
-				++start_pos;
-				++end_pos;
-			}
-			else if (!skipTrailingSp_  && string_started)
-			{
-				++end_pos;
-			}   
-		}
-		else
-		{
-			string_started = true;
-			++end_pos;
-		}
-		++pos_;
-  	}
-	if (end_pos>start_pos)
-	{
-	    substrings.emplace_back(str_+start_pos, end_pos-start_pos);
-		++scanned;
-	}
-	return scanned;
-}
-
-inline char StrParser::curChar()
-{
-    return *(str_ + pos_);
-}
-
-void StrParser::skipSeparator()
-{
-    if (pos_<length_ && isSeparator_[uint8_t(*(str_+pos_))])
-    {
-        if (clearSeparator_)
-        {
-            *(const_cast<char*>(str_ + pos_)) = '\0';
-        }
-        ++pos_;
-    }
-}
-
-void StrParser::skipSplitSeparator()
-{
-    if (pos_<length_ && curChar()==splitSeparator_)
-    {
-        if (clearSeparator_)
-        {
-            *(const_cast<char*>(str_ + pos_)) = '\0';
-        }
-        ++pos_;
-    }
-}
-
-
-void StrParser::skipSplitSeparator()
-{
-    if (pos_<length_ && curChar()==splitSeparator_)
-    {
-        if (clearSeparator_)
-        {
-            *(const_cast<char*>(str_ + pos_)) = '\0';
-        }
-        ++pos_;
-    }
-}
-
-inline void StrParser::skipWhiteSpace()
-{
-    char ch = curChar();
-    while (ch && isspace(ch))
-    {
-        ch = done() ? '\0' : *(str_ + ++pos_);
-    }
-}
-
-inline char StrParser::nextChar()
-{
-    skipWhiteSpace();
-    return done() ? '\0' : *(str_ + pos_++);
-}
-
-void StrParser::getString(std::string& strOut)
-{
-    tv_.string_.clear();
-    char ch = nextChar();
-    while (ch && ch!='"')
-    {
-        if (ch=='\\')
-        {
-            ch = nextChar();
-            switch (ch)
-            {
-                case '\\': strOut.push_back(ch); break;
-                case '"': strOut.push_back(ch); break;
-                case 'n': strOut.push_back('\n'); break;
-                case 't': strOut.push_back('\t'); break;
-                case 'r': strOut.push_back('\r'); break;
-                case 'f': strOut.push_back('\f'); break;
-                default: strOut.push_back(ch); break;
-            }
-        }
-        tv_.string_.push_back(ch);
-        ch = nextChar();
-    }
-    tv_.token_ = Token::String;
-}
-
-void StrParser::getIdentifier(std::string& strOut)
-{
-    tv_.string_.clear();
-    char ch = curChar();
-    while (ch &&
-           (ch>='A' && ch<='Z' || ch>='a' && ch<='z' || ch>='0' && ch<='9' || ch=='_')
-          )
-    {
-        tv_.string_.push_back(ch);
-        ch = done() ? '\0' : *(str_ + ++pos_);
-    }
-    tv_.token_ = Token::Identifier;
-}
-
-void StrParser::getNumber()
-{
-    char ch = curChar();
-    tv_.integer_ = 0;
-    bool integerGot = false;
-    bool isNeg = false;
-    if (ch=='-')
-    {
-        nextChar();
-        isNeg = true;
-    }
-
-    if (ch>='0' && ch<='9')
-    {
-        tv_.integer_ = toUnsignedFromDec();
-        if (isNeg)
-        {
-            tv_.integer_ = -tv_.integer_;
-        }
-        integerGot = true;
-        ch = curChar();
-    }
-    else if (ch!='.')
-    {
-        size_t savedPos = pos_;
-        getIdentifier(tv_.string_);
-        if (tv_.string_=="Infinity" || tv_.string_=="NaN")
-        {
-            tv_.integer_ = isNeg ? std::numeric_limits<int64_t>::min()
-                                 : std::numeric_limits<int64_t>::max();
-            tv_.token_ = Token::Integer;
-            return;
-        }
-        pos_ = savedPos;
-        tv_.token_ = Token::NegSign;
-        return;
-    }
-
-    if (ch=='.')
-    {
-        ch = *(str_ + ++pos_);
-        if (ch>='0' && ch<='9')
-        {
-            size_t old_pos = pos_;
-            double decimal = toUnsignedFromDec();
-            tv_.double_ = double(tv_.integer_);          
-            if (pos_-old_pos<=18)
-            {
-                tv_.double_ +=  decimal/s_exp10[pos_-old_pos];
-            }
-            tv_.token_ = Token::Double;
-        }
-        else if (integerGot)
-        {
-            tv_.token_ = Token::Double;
-        }
-        else
-        {
-            tv_.token_ = Token::DotSign;
-        }
-    }
-    else
-    {
-        tv_.token_ = integerGot ? Token::Integer : Token::Unknown;
-    }
-
-    if (ch=='E' || ch=='e')
-    {
-        ch = *(str_ + ++pos_);
-        bool isNegExp = ch=='-';
-        if (ch=='+' || ch=='-')
-        {
-            ++pos_;
-            unsigned exp = toUnsignedFromDec();
-            if (isNegExp)
-            {
-                if (tv_.token_==Token::Double)
-                {
-                    tv_.double_ = exp<=18 ? tv_.double_/s_exp10[exp] : 0.0;
-                }
-                else if (tv_.token_==Token::Integer)
-                {
-                    tv_.integer_ = exp<=18 ? tv_.integer_/s_exp10[exp] : 0.0;
-                }
-            }
-            else
-            {
-                if (tv_.token_==Token::Double)
-                {
-                    tv_.double_ = exp<=18 ? tv_.double_*s_exp10[exp] : 0;
-                }
-                else if (tv_.token_==Token::Integer)
-                {
-                    tv_.integer_ = exp<=18 ? tv_.integer_*s_exp10[exp] : std::numeric_limits<int64_t>::max();
-                }
-            }
-            
-        }
-    }
-}
-
-const StrParser::TokenValue* StrParser::getToken()
-{
-    skipWhiteSpace();
-    if (done())
-    {
-        tv_.token_ = Token::Done;
-        return &tv_;
-    }
-    char ch = curChar();
-    switch (ch)
-    {
-        case '\0': tv_.token_ = Token::Done; return &tv_;
-        case '{': nextChar(); tv_.token_ = Token::LCurly; return &tv_;
-        case '}': nextChar(); tv_.token_ = Token::RCurly; return &tv_;
-        case '[': nextChar(); tv_.token_ = Token::LBracket; return &tv_;
-        case ']': nextChar(); tv_.token_ = Token::RBracket; return &tv_;
-        case '(': nextChar(); tv_.token_ = Token::LParenthesis; return &tv_;
-        case ')': nextChar(); tv_.token_ = Token::RParenthesis; return &tv_;
-        case '=': nextChar(); tv_.token_ = Token::EqualSign; return &tv_;
-        case '>': nextChar(); tv_.token_ = Token::GreaterSign; return &tv_;
-        case '<': nextChar(); tv_.token_ = Token::LessSign; return &tv_;
-        //case '-': nextChar(); tv_.token_ = Token::NegSign; return &tv_;
-        case '.': nextChar(); tv_.token_ = Token::DotSign; return &tv_;
-        case ':': nextChar(); tv_.token_ = Token::Colon; return &tv_;
-        case ';': nextChar(); tv_.token_ = Token::SemiColon; return &tv_;
-        case '"': getString(tv_.string_); return &tv_;
-    }
-
-    if (ch>='A' && ch<='Z' || ch>='a' && ch<='z' || ch=='_')
-    {
-        getIdentifier(tv_.string_);
-        if (tv_.string_=="Infinity" || tv_.string_=="NaN")
-        {
-            tv_.integer_ = std::numeric_limits<int64_t>::max();
-            tv_.token_ = Token::Integer;
-        }
-        return &tv_;
-    }
-
-    getNumber();
-
-    // If number does not present, skip one char
-    if (tv_.token_ == Token::Unknown)
-    {
-        nextChar();
-    }
-
-    return &tv_;
-}
 
 }
