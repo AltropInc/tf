@@ -116,9 +116,9 @@ class EnumSet
     EnumSet &operator&=(const EnumSet &es)
     { bitset_ &= es.bitset_; return *this; }
 
-    friend EnumSet &operator | (EnumSet es1, const EnumSet &es2)
+    friend EnumSet operator | (EnumSet es1, const EnumSet &es2)
     { es1 |= es2; return es1; }
-    friend EnumSet &operator & (EnumSet es1, const EnumSet &es2)
+    friend EnumSet operator & (EnumSet es1, const EnumSet &es2)
     { es1 &= es2; return es1; }
 
     EnumSet operator&(ET e) { EnumSet tmp(*this); return tmp&=e; }
