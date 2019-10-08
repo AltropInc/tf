@@ -2,7 +2,7 @@
 
 #include "Enum.h"
 #include <bitset>
-
+#include <iostream>
 namespace tf
 {
 
@@ -37,13 +37,15 @@ struct BitSet
     BitSet& set () { value_ = ~(0UL); return *this; }
     BitSet& reset (size_t v) { value_ &= ~(T(1) << v); return *this; }
     BitSet& reset () { value_ = 0UL;  return *this; }
-    bool test (size_t v) const { return (value_ | (T(1) << v))!=0; }
-    BitSet& flip (size_t v) { value_ ^ (T(1) << v); return *this; }
+    bool test (size_t v) const { return (value_ & (T(1) << v))!=0; }
+    BitSet& flip (size_t v) { value_ = value_ ^ (T(1) << v); return *this; }
     BitSet& flip () { value_ = ~value_; return *this; }
     bool empty() const { return value_==0; }
     bool any() const { return value_!=0; }
     size_t count() const { return __builtin_popcountl(value_); }
     size_t size() const { return __builtin_popcountl(value_); }
+    bool operator==(const BitSet &es) const { return value_ == es.value_; }
+    bool operator!=(const BitSet &es) const { return value_ != es.value_; }
     BitSet& operator |= (BitSet oth) { value_|= oth.value_; *this; }
     BitSet& operator &= (BitSet oth) { value_&= oth.value_; *this; }
     uint64_t to_ullong() const { return uint64_t(value_); }
@@ -74,7 +76,7 @@ class EnumSet
 
   public:
     EnumSet() = default;
-    explicit EnumSet(ET e) { bitset_.set(ET::toUnderlying(e)); }
+    explicit EnumSet(ET e) { bitset_.set(EnumToSizeT::get<ET>(e)); }
     EnumSet(const EnumSet &es) : bitset_(es.bitset_) {}
 
     EnumSet &operator=(const EnumSet &es) {bitset_ = es.bitset_; return *this;}
@@ -82,21 +84,24 @@ class EnumSet
     bool operator==(const EnumSet &es) const { return bitset_ == es.bitset_; }
     bool operator!=(const EnumSet &es) const { return bitset_ != es.bitset_; }
 
-    void set(ET e) { bitset_.set(size_t(ET::toUnderlying(e))); }
+    void set(ET e) { bitset_.set(EnumToSizeT::get<ET>(e)); }
     EnumSet &set(ET e, bool value)
-    { bitset_.set(size_t(ET::toUnderlying(e)), value); return *this; }
+    { bitset_.set(EnumToSizeT::get<ET>(e), value); return *this; }
     EnumSet& set() const { return bitset_.set(); }
 
-    void unset(ET e) { bitset_.reset(size_t(ET::toUnderlying(e))); }
+    void unset(ET e) { bitset_.reset(EnumToSizeT::get<ET>(e)); }
     void clear() { bitset_.reset(); }
     EnumSet& reset() { bitset_.reset(); return *this; }
-    EnumSet& reset(ET e) { bitset_.reset(size_t(ET::toUnderlying(e))); return *this; }
+    EnumSet& reset(ET e) { bitset_.reset(EnumToSizeT::get<ET>(e)); return *this; }
   
-    void toggle(ET e) { bitset_.flip(size_t(ET::toUnderlying(e))); }
-    EnumSet&  flip(ET e) { bitset_.flip(size_t(ET::toUnderlying(e))); return *this; }
-    EnumSet& flip() const { return bitset_.flip(); }
+    void toggle(ET e) { bitset_.flip(EnumToSizeT::get<ET>(e)); }
+    EnumSet&  flip(ET e) { bitset_.flip(EnumToSizeT::get<ET>(e)); return *this; }
+    EnumSet& flip() {
+        for (auto e: ET::enum_values) flip(e);
+        return *this;
+    }
 
-    bool has(ET e) const { return bitset_.test(size_t(ET::toUnderlying(e))); }
+    bool has(ET e) const { return bitset_.test(EnumToSizeT::get<ET>(e)); }
  
     explicit operator bool() const { return bitset_.any(); }
     size_t size() const { return bitset_.size(); }
@@ -119,7 +124,7 @@ class EnumSet
     EnumSet operator&(ET e) { EnumSet tmp(*this); return tmp&=e; }
     EnumSet operator|(ET e) { EnumSet tmp(*this); return tmp|=e; }
 
-    bool operator[](ET e) const { return bitset_[size_t(ET::toUnderlying(e))]; }
+    bool operator[](ET e) const { return bitset_[EnumToSizeT::get<ET>(e)]; }
    
     ///Contructor from multiple underlying enum type values
     ///@Usage: EnumSet<EnumType>(EnumValue1, EnumValue3, EnumValue5)
@@ -127,7 +132,7 @@ class EnumSet
              //class = std::enable_if_t<all_same_type<ET, ETS...>::value, void>>
     EnumSet(ET e, ETS... others)
     {
-        bitset_.set(size_t(ET::toUnderlying(e)));
+        bitset_.set(EnumToSizeT::get<ET>(e));
         *this |= EnumSet(others...);
     }
 
@@ -137,6 +142,7 @@ class EnumSet
     /// Returns string in a set of enum names
     std::string toString() const
     {
+        std::cout<< "In toString " << bitset_.value_ << std::endl; 
         std::string str = "(";
         for (auto e: ET::enum_values)
         {
